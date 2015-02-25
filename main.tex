@@ -1,0 +1,175 @@
+\documentclass[11pt]{article}
+\usepackage{fullpage}
+\usepackage{enumitem}
+\usepackage{amsmath,amssymb}
+
+\title{Debugging Probabilistic Programs}
+\author{Vikash K. Mansinghka, Ben Zinberg}
+
+\newcommand{\Xsp}{X_{\text{specific}}}
+
+\begin{document}
+
+\maketitle
+
+\section{Points}
+
+Some points, once brought to your attention, are quite believable a priori:
+
+\begin{itemize}
+  \item {\bf Probabilistic program development is not well, sometimes
+    incorrectly, understood.}  It's a new field.  Many aspects of conventional
+    programming are useful, but many of the basic intuitions from that area can
+    lead us astray here.
+
+  \item {\bf Debugging probabilistic programs is like debugging hardware.} While
+    probabilistic programs can produce conventional errors, debugging is
+    typically about chasing down other kinds of problems.  The output of a
+    probabilistic model (or the result of inference on a model) is a probability
+    distribution, which can be inspected in a number of ways.  In order to
+    ensure that the distribution achieved is acceptable, it is crucial to {\em
+    use} many or all of those ways.  It's easy to forget to do this, since in
+    the finished product only a neat little corner of the model will be
+    inspected.  But as in hardware debugging, it is best to proceed with
+    ruthless skepticism, as each component is not just liable but quite likely
+    to fail.
+    
+    In conventional programming (partly due to your trained intuitions as a
+    programmer), you can reliably analyze most short chunks of code in your
+    head.  You (and we) cannot do this for probabilistic code, both because you
+    are not trained and because it is harder.  Also, it is typically much easier
+    to sanity-check a short conventional program; in order to sanity-check a
+    probabilistic program, you need to inspect a distribution, which requires
+    many probes.
+\end{itemize}
+
+\section{Steps}
+
+Here is a series of steps proposed by VKM to debug probabilistic programs.  Here
+\begin{itemize}[noitemsep]
+  \item $X$ is latents
+  \item $\lambda$ is parameters
+  \item $Y$ is data
+  \item $X \mapsto T_Y(X)$ is the ``step'' operator of an inference program,
+    such that the true posterior $P(X|Y,\lambda)$ is invariant under $T_Y$, and
+    $T_Y^t(X)$ converges to the true posterior $P(X|Y,\lambda)$ as $t \to
+    \infty$.
+\end{itemize}
+
+Here are the steps:
+\begin{enumerate}
+  \item ``Do I know the problem I'm asking the prob. prog. to solve?  Do I know
+    it's solvable?  Can I solve it?''
+
+    You should not expect v0.1 of your program to be better at solving the
+    problem than you---you have eyes and a brain.  Your first test case should,
+    a fortiori, be one in which it is completely obvious to you what the
+    solution is, both because you need a much stupider program to work, and
+    because you need to be able to reliably tell whether the program has
+    succeeded.  Along that vein, it is important at this early stage to set up
+    adequate {\em visualization} for answers $X$ produced by the program.  Your
+    eyes are much more powerful signal processors than your brain's abstract
+    number sense, and your inspection plan (you have one, right?) should try to
+    leverage that.  Sometimes it will be nice to have visualization of $X$
+    before you even have a prior.  That way, each of the (probably many) times
+    you rewrite the prior, you can sanity-check by writing a quick loop to
+    sample the prior and generate several \texttt{png}s.
+
+  \item ``Do I really grok $P(X|\lambda)$?''
+
+    Cycling through summary \texttt{png}s of samples is a good first step, but
+    to go beyond what is visible at first glance, it will be useful to come up
+    with a small (or large) portfolio of statistics that can be plotted or
+    inspected to reveal more information about the distribution.  Statistics for
+    a PCFG could include
+    \begin{itemize}[noitemsep]
+      \item number of variables in parse tree
+      \item number of times each production was used
+      \item yield at 0, i.e., the terminal reached by walking left maximally
+    \end{itemize}
+
+  \item\label{itm:grok-transition-operator}
+    ``Do I grok $T_Y(X)$ at all?''
+
+    It is quite hard to analyze this abstractly by looking at text.  Visual
+    methods are necessary:
+    \begin{itemize}[noitemsep]
+      \item Make a movie of $T_Y^t(X)$, $t=0,1,\ldots$.
+      \item Make a movie of Gibbs sampling: an animation of $X^t$, $t=0,1,\ldots$, where
+        \[
+        X^0 \sim P(X|\lambda), \quad
+        Y^t \sim P(Y|X^t,\lambda), \quad
+        X^{t+1} \sim T_Y(X^t).
+        \]
+        To better understand $T$ better, it can be helpful to also do the above
+        steps when $Y$ is empty, i.e., when inference is done on no data.  The
+        true posterior in this case is trivial to write down, but you are not
+        trying to learn about the true posterior, you are trying to learn about
+        the inference algorithm.
+    \end{itemize}
+
+  \item ``Does $T_Y(X)$ respect Bayes' rule?''
+
+    One way to check this is to run step \ref{itm:grok-transition-operator} with
+    $Y$ empty, and compare the empirical distribution of $\{X^t\}$ to the prior
+    $P(X|\lambda)$, perhaps using a Q-Q plot on summary statistics.  If $T$ is
+    meant to sample the posterior (rather than do MAP estimation or something
+    like that) then the distributions should match.
+
+    Another pair of distributions to compare is the history when $Y$ contains
+    data versus the distribution inferred by rejection sampling.
+
+  \item ``Now I:
+    \begin{enumerate}
+      \item Know the problem is solvable (i.e., the data is ok)
+      \item Grok my model (to some extent)
+      \item Grok my inference program (to some extent)
+      \item Grok their interaction (to some extent)
+      \item Have inspection infrastructure for model, data, and $T_Y$
+      \item Have quantitative evidence in support of intuition
+      \item Have (anecdotally) established asymptotic soundness of $T_Y$, so I
+        can get `Bayesian' behavior in some regime''
+    \end{enumerate}
+
+  \item Determine how much data and inference are needed to ``solve'' random
+    instances, and specific instances, and how inference performance compares to
+    baselines.
+
+    The idea is to get some measure of how inference quality depends on number
+    of steps $t$ and number of data points $N$.  (Or, fixing a certain quality
+    goal, how large $t$ has to be as a function of $N$ to achieve that goal, or
+    vice versa.)  If you can codify one or several concrete ways to measure
+    inference quality for your problem, that would be useful.  One basic/rough
+    way to do this is to generate $X^*$ from the prior, $Y^* \sim
+    P(Y|X^*,\lambda)$, and double $t$ and $N$ until the inferred posterior
+    concentrates on $X^*$, though of course, this effect could be more
+    conspicuous or less conspicuous depending on the inference problem.
+
+  \item\label{itm:seatbelt}
+    Try to find ``seatbelt variables'' $\{\Xsp\}$ which capture the quintessence
+    of the sorts of inference dynamics that occur: something like an orthogonal
+    basis for the possible states $X$ which is orthogonal with respect to the
+    qualitative inference behaviors produced.
+
+  \item Use step \ref{itm:seatbelt} as a harness to perform full
+    diagnostics---i.e., histories/traces of ``score,'' probe statistics,
+    marginals, values of $\Xsp$'s, etc.--- on a few ``extreme'' instances (some
+    causing failure, either inductive or computational).
+
+  \item Try the real problem---or, add ``?? variable'' [not sure what this means
+    -- BZ] and repeat
+\end{enumerate}
+
+\section{Notes}
+
+Notes about these steps:
+\begin{itemize}
+  \item Each of these steps will be run many times.  It is well worth it to set
+    up very clean, automatic machinery for the steps.
+  \item VKM points out, ``If the model and data generator are both parametrized
+    by the same scaling parameters (amount of evidence, number of random
+    variables) and if the inference algorithm is parametrized by $T$, then the
+    steps are essentially mechanical.''
+\end{itemize}
+
+\end{document}
